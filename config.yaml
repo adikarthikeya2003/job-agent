@@ -1,0 +1,206 @@
+# job-agent config — single source of truth for company list, keywords, and thresholds.
+# Edit this file to add companies, change role targeting, or adjust the surfacing threshold.
+
+resume:
+  # Path is relative to job-agent/ unless absolute. Regenerated from base_resume.tex via
+  # `python3 cli.py sync-resume` whenever base_resume.tex changes.
+  source_md: "resume.md"
+  source_tex: "../base_resume.tex"
+
+scoring:
+  # "tfidf" = default, zero network cost, deterministic. "embeddings" = local
+  # sentence-transformers model (all-MiniLM-L6-v2), stronger semantic match, slower,
+  # requires a one-time model download (still free, no API key).
+  method: "tfidf"
+  embeddings_model: "all-MiniLM-L6-v2"
+  # Linear rescaling of raw cosine-similarity*100 so scores land in a usable 0-100 range.
+  # Raw TF-IDF cosine similarity between a resume section and a full JD (mostly company
+  # boilerplate) rarely exceeds ~0.15 even for a strong match. This constant does NOT
+  # change ranking/ordering of jobs against each other -- only the scale. Calibrated once
+  # against a real Greenhouse batch (Stripe, 526 postings): raw scores for genuinely
+  # on-target ML/AI roles landed 10-14, so boost=3.5 puts a strong match around 35-50.
+  # Re-tune if your own score distribution (logged every run) runs persistently off.
+  score_boost: 3.5
+  # Section weights must sum to 1.0. See match_scorer.py for how each is applied.
+  section_weights:
+    skills: 0.40
+    experience_projects: 0.40
+    summary: 0.10
+    education: 0.10
+  # Jobs scoring below this are still logged but excluded from the surfaced output.
+  surface_threshold: 30
+
+roles:
+  # Keyword families used to classify + filter postings. A posting matches a family if
+  # its title or first ~200 words of description contains any keyword (case-insensitive).
+  families:
+    data_analyst:
+      - "data analyst"
+      - "business analyst"
+      - "reporting analyst"
+    data_scientist:
+      - "data scientist"
+      - "data science"
+      - "applied scientist"
+    ai_engineer:
+      - "ai engineer"
+      - "applied ai"
+      - "genai engineer"
+      - "llm engineer"
+    ml_engineer:
+      - "machine learning engineer"
+      - "ml engineer"
+      - "mle "
+      - "ai/ml engineer"
+      - "ai|ml engineer"
+    software_engineer:
+      - "software engineer"
+      - "swe "
+      - "software developer"
+
+  # Seniority keywords used to tag postings; "unspecified" is used when none match.
+  seniority:
+    entry: ["entry level", "new grad", "university grad", "early career", "level i", " i ", "associate"]
+    mid: ["level ii", " ii ", "mid level", "2+ years", "3+ years"]
+    senior: ["senior", "sr.", "sr ", "staff", "principal", "lead "]
+
+  experience_range:
+    min_yoe: 0
+    max_yoe: 12
+
+filters:
+  # Only surface US-based postings (remote-US counts as US; remote-unspecified/global
+  # postings with no US location signal are excluded). Applies to the daily run and
+  # on-demand runs alike — flip to false if you ever want to see non-US postings too.
+  us_only: true
+
+sponsorship:
+  # Phrases that flag a posting as explicitly excluding visa sponsorship — critical for OPT.
+  exclude_phrases:
+    - "not sponsor"
+    - "no sponsorship"
+    - "does not sponsor"
+    - "unable to sponsor"
+    - "will not sponsor"
+    - "must be a us citizen"
+    - "u.s. citizenship required"
+    - "must be authorized to work in the united states without sponsorship"
+  include_phrases:
+    - "will sponsor"
+    - "sponsorship available"
+    - "visa sponsorship provided"
+
+notifications:
+  channel: "none"   # "none" | "stdout" | "file"
+  file_path: "output/latest_notify.txt"
+
+companies:
+  # tier: 1 = Greenhouse/Lever JSON API, 2 = RSS/job feed, 3 = HTML/unofficial-JSON scrape
+  # (robots.txt-gated), 4 = JobRight, 5 = browser automation (manual-only, never in cron).
+  - name: "dell"
+    display_name: "Dell Technologies"
+    tier: 3
+    adapter: "oracle_hcm"
+    oracle_hcm:
+      host: "iawmqy.fa.ocs.oraclecloud.com"
+      site_number: "CX_1001"
+    notes: "Verified live: jobs.dell.com redirects to Oracle Fusion Cloud HCM (Candidate Experience), not Workday. Confirmed 348 open postings via recruitingCEJobRequisitions API at build time."
+
+  - name: "meta"
+    display_name: "Meta"
+    tier: 5
+    adapter: "browser_manual"
+    notes: "metacareers.com is a session-gated GraphQL SPA. No stable public JSON API. Manual-trigger only, excluded from daily cron."
+
+  - name: "google"
+    display_name: "Google"
+    tier: 5
+    adapter: "browser_inbox"
+    browser_inbox:
+      max_age_minutes: 90
+    notes: "No reachable JSON API: the old /api/v3/search endpoint is retired (404) and the current site posts to Google's internal `batchexecute` RPC. Harvested from the rendered page via Chrome (see scripts/google_harvest.md) into data/browser_inbox/google.json. Tier 5 = excluded from the daily cron by design; runs on `cli.py fetch`."
+
+  - name: "microsoft"
+    display_name: "Microsoft"
+    tier: 3
+    adapter: "microsoft_careers"
+    microsoft:
+      queries:
+        - "data engineer"
+        - "data scientist"
+        - "data analyst"
+        - "machine learning engineer"
+        - "business intelligence"
+    notes: "Verified live: apply.careers.microsoft.com/api/pcsx/search (Eightfold). domain=microsoft.com is REQUIRED and must be exactly that value. Old gcsservices v1 endpoint is retired. Works unauthenticated; no JD body in list payload."
+
+  - name: "ibm"
+    display_name: "IBM"
+    tier: 3
+    adapter: "ibm_careers"
+    ibm: {}
+    notes: "Verified live: POST www-api.ibm.com/search/api/v2 (NOT www.ibm.com — that 404s). careers.ibm.com itself is Avature and returns a 202 bot-challenge. Source publishes no posting date, so posted_date is blank for IBM."
+
+  - name: "amazon"
+    display_name: "Amazon"
+    tier: 3
+    adapter: "amazon_jobs"
+    amazon:
+      loc_query: "United States"
+      # Role-targeted rather than a full-board pull: Amazon has tens of thousands of
+      # open reqs (mostly ops/warehouse) and an unfiltered fetch would swamp scoring.
+      queries:
+        - "data engineer"
+        - "data scientist"
+        - "data analyst"
+        - "machine learning engineer"
+        - "business intelligence engineer"
+    notes: "Verified live: www.amazon.jobs/search.json public JSON endpoint, full JD text inline, sort=recent. Covers Amazon + AWS. Unofficial/undocumented — same fragility class as Workday."
+
+  - name: "samsung"
+    display_name: "Samsung"
+    tier: 3
+    adapter: "workday"
+    workday:
+      tenant: "sec"
+      wd_host: "sec.wd3.myworkdayjobs.com"
+      site: "Samsung_Careers"
+    notes: "Verified live at build time: 587 open postings via Workday CXS. Covers Samsung Electronics America / Samsung Semiconductor. List stage has no JD body, so match scores are title+location based."
+
+  # Example Tier-1 companies to seed the config — add/remove freely.
+  - name: "stripe"
+    display_name: "Stripe"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "stripe"
+
+  - name: "coinbase"
+    display_name: "Coinbase"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "coinbase"
+
+  - name: "databricks"
+    display_name: "Databricks"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "databricks"
+
+  - name: "palantir"
+    display_name: "Palantir"
+    tier: 1
+    adapter: "lever"
+    board_token: "palantir"
+
+  - name: "speedyapply_newgrad_usa"
+    display_name: "speedyapply 2027 AI New-Grad USA"
+    tier: 2
+    adapter: "github_md"
+    github_md:
+      # Curated, frequently-updated community list. Fetched raw+fresh on every run.
+      url: "https://github.com/speedyapply/2027-AI-College-Jobs/blob/main/NEW_GRAD_USA.md"
+      branch: "main"
+    notes: "Community-maintained new-grad AI/ML/DS/SWE list (USA). Updates continuously; no per-posting JD, so match scores are title+location based."
+
+daily_run:
+  # Tiers 4 and 5 are never included here regardless of this list — enforced in pipeline.py.
+  max_tier: 3

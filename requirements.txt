@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+lxml
+scikit-learn
+pyyaml
+# Optional, only needed if scoring.method: embeddings in config.yaml:
+# sentence-transformers
+# Optional, only needed for Tier 5 manual browser fetch (cli.py fetch-manual):
+# playwright

@@ -1,0 +1,6 @@
+output/
+logs/
+__pycache__/
+*.pyc
+data/browser_inbox/
+.DS_Store
