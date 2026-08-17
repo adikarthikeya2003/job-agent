@@ -66,6 +66,12 @@ class DedupStore:
         return row[0] != current_resume_hash
 
     def upsert(self, job: dict, resume_hash_val: str):
+        # description is only ever read back in-memory during the same run (for
+        # scoring); nothing downstream re-reads it from the DB. Truncate to a
+        # sanity-check excerpt rather than storing full JD text forever -- at
+        # dozens of companies x thousands of postings, full text is what blew
+        # jobs.db past GitHub's 100MB push limit within two runs.
+        job = {**job, "description": (job.get("description") or "")[:500]}
         self.conn.execute("""
             INSERT INTO jobs (company, external_id, title, location, description, apply_link,
                 posted_date, source_tier, role_family, seniority, remote_status,
@@ -95,6 +101,25 @@ class DedupStore:
             VALUES (?,?,?,?,?,?)
         """, (company, tier_used, int(ok), error, jobs_found, jobs_new))
         self.conn.commit()
+
+    def prune_stale(self, days: int = 45) -> int:
+        """Drop jobs not re-seen in `days` days (almost certainly closed postings)
+        and old run_log rows, then VACUUM to actually shrink the file on disk --
+        without this, jobs.db grows unbounded (~1 daily-cron run adds full JD text
+        for every posting at every configured company) and eventually exceeds
+        GitHub's 100MB hard push limit, breaking the cloud routine."""
+        cur = self.conn.execute(
+            "DELETE FROM jobs WHERE last_seen_at < datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        deleted = cur.rowcount
+        self.conn.execute(
+            "DELETE FROM run_log WHERE started_at < datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        self.conn.commit()
+        self.conn.execute("VACUUM")
+        return deleted
 
     def close(self):
         self.conn.close()

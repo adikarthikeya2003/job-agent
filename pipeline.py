@@ -309,6 +309,9 @@ def run(config_path: Path = BASE_DIR / "config.yaml", daily_mode: bool = True,
                     f"that cleared the score threshold")
     logger.info(f"Surfaced {written['count']} jobs >= threshold {threshold} -> {written['csv']}")
 
+    pruned = store.prune_stale(days=45)
+    if pruned:
+        logger.info(f"Pruned {pruned} stale job rows (not re-seen in 45 days) to keep jobs.db small")
     store.close()
     top_jobs = sorted(all_jobs, key=lambda j: j["match_score"], reverse=True)[:15]
     return {"surfaced": written["count"] + written_discovered["count"],
