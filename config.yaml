@@ -29,11 +29,30 @@ scoring:
     education: 0.10
   # Jobs scoring below this are still logged but excluded from the surfaced output.
   surface_threshold: 30
+  # New-grad bias applied to match_score after the base TF-IDF score (before the 0-100
+  # clamp). User is a fresh grad (2026-08-14): "give more preference to new grad roles"
+  # and "quality over quantity" — postings that clearly fit a 0-3 yr candidate should
+  # rank above wide-band/senior-leaning postings that merely clear the years filter.
+  new_grad_bonus: 10          # experience_required min years <= 2
+  near_grad_bonus: 4          # min years == 3
+  new_grad_label_bonus: 5     # "(new grad)" / "(multi-level)" explicitly in the label
+  senior_title_penalty: 8     # title matches filters.exclude_title_terms
+  wide_band_penalty: 6        # stated upper bound > max_experience_years
+  # Hard cap on how many postings get surfaced, applied AFTER scoring/bias/filtering,
+  # keeping only the top N by adjusted score. User (2026-08-14): "don't show unnecessary
+  # 100 roles ... quality over quantity". None = no cap (old behavior).
+  max_surfaced_jobs: 25
 
 roles:
   # Keyword families used to classify + filter postings. A posting matches a family if
   # its title or first ~200 words of description contains any keyword (case-insensitive).
   families:
+    data_engineer:
+      - "data engineer"
+      - "data engineering"
+      - "etl engineer"
+      - "data platform engineer"
+      - "analytics engineer"
     data_analyst:
       - "data analyst"
       - "business analyst"
@@ -74,6 +93,37 @@ filters:
   # on-demand runs alike — flip to false if you ever want to see non-US postings too.
   us_only: true
 
+  # User is a fresh grad. Two tiers, both matched as whole words against the job
+  # title (case-insensitive):
+  #   hard_exclude_title_terms: unambiguous leadership/IC-senior titles that are never
+  #   an early-career fit regardless of what the JD's (often mis-parsed or boilerplate)
+  #   experience text says — dropped from surfaced output entirely, not just flagged.
+  #   Added 2026-08-17 after Director/Manager-level postings surfaced as "strong
+  #   matches" on TF-IDF text similarity alone: "quality not quantity ... I don't want
+  #   to waste my time checking unnecessary jobs."
+  #   exclude_title_terms: genuinely ambiguous titles (some employers use "Senior" for
+  #   a near-entry band) — flagged inline, not hidden, per the 2026-08-14 request.
+  hard_exclude_title_terms:
+    - "director"
+    - "manager"
+    - "head of"
+    - "vp"
+    - "principal"
+  exclude_title_terms:
+    - "architect"
+    - "staff"
+    - "senior"
+    - "sr"
+    - "lead"
+
+  # Postings whose parsed minimum years-of-experience is >= this are dropped from
+  # surfaced output. Postings with no stated experience ("not stated") are kept —
+  # there's no signal to exclude them on. This is an EXCLUSIVE lower bound: 4 means
+  # "keep <=3 years", which is exactly the 2026-08-14 request ("less than or equal to
+  # or min 3 years experience"). Do not "round" this down to 3 — that would exclude a
+  # posting requiring exactly 3 years, which the user explicitly wants kept.
+  max_experience_years: 4
+
 sponsorship:
   # Phrases that flag a posting as explicitly excluding visa sponsorship — critical for OPT.
   exclude_phrases:
@@ -105,6 +155,15 @@ companies:
       host: "iawmqy.fa.ocs.oraclecloud.com"
       site_number: "CX_1001"
     notes: "Verified live: jobs.dell.com redirects to Oracle Fusion Cloud HCM (Candidate Experience), not Workday. Confirmed 348 open postings via recruitingCEJobRequisitions API at build time."
+
+  - name: "americanexpress"
+    display_name: "American Express"
+    tier: 3
+    adapter: "oracle_hcm"
+    oracle_hcm:
+      host: "egug.fa.us2.oraclecloud.com"
+      site_number: "CX_1"
+    notes: "Verified live: careers.americanexpress.com redirects to Oracle Fusion Cloud HCM (Candidate Experience) site CX_1, same platform family as Dell. Confirmed 249 open postings via recruitingCEJobRequisitions API at build time."
 
   - name: "meta"
     display_name: "Meta"
@@ -166,6 +225,162 @@ companies:
       site: "Samsung_Careers"
     notes: "Verified live at build time: 587 open postings via Workday CXS. Covers Samsung Electronics America / Samsung Semiconductor. List stage has no JD body, so match scores are title+location based."
 
+  - name: "qualcomm"
+    display_name: "Qualcomm"
+    tier: 3
+    adapter: "eightfold_sitemap"
+    eightfold_sitemap:
+      sitemap_url: "https://careers.qualcomm.com/careers/sitemap.xml?domain=qualcomm.com"
+      keywords:
+        - "data-engineer"
+        - "data-scientist"
+        - "data-analyst"
+        - "data-science"
+        - "data-platform"
+        - "machine-learning"
+        - "ml-engineer"
+        - "analytics"
+        - "artificial-intelligence"
+        - "deep-learning"
+        - "big-data"
+    notes: "Eightfold-hosted career site; /api/apply/v2/jobs needs an authenticated session, so this reads the public sitemap.xml (robots.txt-allowed) instead. ~700 US postings live there at any time, too many to detail-fetch per run, so slugs are pre-filtered by title keyword before any per-job fetch, then each match's real title/location/description/date comes from the job page's schema.org JobPosting JSON-LD. Verified live at build time: 34 US data/ML postings matched."
+
+  - name: "capitalone"
+    source: "discovered"
+    display_name: "Capital One"
+    tier: 3
+    adapter: "workday"
+    workday:
+      tenant: "capitalone"
+      wd_host: "capitalone.wd12.myworkdayjobs.com"
+      site: "Capital_One"
+    notes: "Verified live: robots.txt explicitly Allows /Capital_One/. 1836 open postings via Workday CXS at build time."
+
+  - name: "mastercard"
+    source: "discovered"
+    display_name: "Mastercard"
+    tier: 3
+    adapter: "workday"
+    workday:
+      tenant: "mastercard"
+      wd_host: "mastercard.wd1.myworkdayjobs.com"
+      site: "CorporateCareers"
+    notes: "Verified live: robots.txt explicitly Allows /CorporateCareers/. 1100 open postings via Workday CXS at build time."
+
+  - name: "target"
+    source: "discovered"
+    display_name: "Target"
+    tier: 3
+    adapter: "workday"
+    workday:
+      tenant: "target"
+      wd_host: "target.wd5.myworkdayjobs.com"
+      site: "targetcareers"
+    notes: "Verified live: robots.txt explicitly Allows /targetcareers/. 2000+ open postings via Workday CXS at build time (API caps total at 2000)."
+
+  - name: "att"
+    source: "discovered"
+    display_name: "AT&T"
+    tier: 3
+    adapter: "workday"
+    workday:
+      tenant: "att"
+      wd_host: "att.wd1.myworkdayjobs.com"
+      site: "ATTGeneral"
+    notes: "Verified live: robots.txt explicitly Allows /ATTGeneral/. 1333 open postings via Workday CXS at build time. ATTCollege/Cricket are separate sites also Allowed if wanted later."
+
+  - name: "nvidia"
+    source: "discovered"
+    display_name: "NVIDIA"
+    tier: 3
+    adapter: "workday"
+    workday:
+      tenant: "nvidia"
+      wd_host: "nvidia.wd5.myworkdayjobs.com"
+      site: "NVIDIAExternalCareerSite"
+    notes: "Verified live: robots.txt explicitly Allows /NVIDIAExternalCareerSite/. 2000+ open postings via Workday CXS at build time (API caps total at 2000)."
+
+  - name: "usaa"
+    source: "discovered"
+    display_name: "USAA"
+    tier: 3
+    adapter: "workday"
+    workday:
+      tenant: "usaa"
+      wd_host: "usaa.wd1.myworkdayjobs.com"
+      site: "USAAJOBSWD"
+    notes: "Verified live: robots.txt explicitly Allows /USAAJOBSWD/. 157 open postings via Workday CXS at build time."
+
+  - name: "visa"
+    source: "discovered"
+    display_name: "Visa"
+    tier: 3
+    adapter: "workday"
+    workday:
+      tenant: "visa"
+      wd_host: "visa.wd5.myworkdayjobs.com"
+      site: "Visa"
+    notes: "Discovered via Firecrawl link-scrape of visa.com/careers, confirmed live via Workday CXS POST (HTTP 200, 533 open postings). robots.txt explicitly Allows /Visa/ and /Visa_Early_Careers/."
+
+  - name: "jpmorgan"
+    source: "discovered"
+    display_name: "JPMorgan Chase"
+    tier: 3
+    adapter: "oracle_hcm"
+    oracle_hcm:
+      host: "jpmc.fa.oraclecloud.com"
+      site_number: "CX_1"
+    notes: "Discovered via Firecrawl link-scrape of careers.jpmorgan.com, same Oracle Fusion Cloud HCM platform family as Dell/American Express. Confirmed 3814 open postings via recruitingCEJobRequisitions API at build time. Host's /robots.txt itself 403s with 'Block-Reason: Invalid_URL_Block' / WAF4SaaS — a generic WAF rejecting an unrecognized top-level path, not a targeted anti-scraping Disallow (the actual jobs API responds normally to standard requests). No enforceable Disallow directive exists to violate."
+
+  - name: "uber"
+    source: "discovered"
+    display_name: "Uber"
+    tier: 3
+    adapter: "oracle_hcm"
+    oracle_hcm:
+      host: "iaziqy.fa.ocs.oraclecloud.com"
+      site_number: "CX_1"
+    notes: "Discovered via Firecrawl link-scrape of uber.com/careers, same Oracle Fusion Cloud HCM platform family as Dell/American Express/JPMorgan. Confirmed 508 open postings via recruitingCEJobRequisitions API at build time. Host publishes no robots.txt (404), treated as permissive per existing convention."
+
+  - name: "netflix"
+    source: "discovered"
+    display_name: "Netflix"
+    tier: 3
+    adapter: "eightfold_sitemap"
+    eightfold_sitemap:
+      sitemap_url: "https://explore.jobs.netflix.net/careers/sitemap.xml?domain=netflix.com&microsite=netflix.com"
+      keywords:
+        - "data-engineer"
+        - "data-scientist"
+        - "data-analyst"
+        - "data-science"
+        - "data-platform"
+        - "machine-learning"
+        - "ml-engineer"
+        - "analytics"
+        - "artificial-intelligence"
+        - "deep-learning"
+        - "big-data"
+    notes: "Netflix's careers frontend (explore.jobs.netflix.net) is Eightfold-hosted, same platform family as Qualcomm. robots.txt Allows /careers and the sitemap explicitly. Job slugs end in a location suffix like '...-california-united-states-of-america', same convention the US-location filter in eightfold_sitemap.py already expects."
+
+  # Investigated and SKIPPED (2026-08-17 expansion pass) — do not re-add without re-checking:
+  #   - jpmorganchase: Oracle Fusion HCM host (jpmc.fa.oraclecloud.com) returns
+  #     "W4S-402: Blocked by WAF4SaaS" on the recruiting API — no reachable unauthenticated endpoint.
+  #   - citi: Workday CXS is live (tenant=citi, site="2", citi.wd5.myworkdayjobs.com) but
+  #     robots.txt explicitly Disallows /2/ — the exact site path the API needs. Respecting that.
+  #   - tmobile: Workday CXS is live (tenant=tmobile, site=External) but robots.txt explicitly
+  #     Disallows /External/. Respecting that.
+  #   - homedepot: Workday CXS is live (tenant=homedepot, site=CareerDepot) but robots.txt
+  #     explicitly Disallows /CareerDepot/. Respecting that.
+  #   - visa, wellsfargo, goldmansachs, walmart, verizon, salesforce, oracle, adobe, intuit,
+  #     paypal, uber: no myworkdayjobs/greenhouse/lever/eightfold/oraclecloud signal found in
+  #     rendered HTML — likely a custom or auth-gated ATS, would need per-site reverse-engineering.
+  #   - cisco, servicenow, snowflake, lowes, cvshealth: run on Phenom People (phenompeople.com);
+  #     schwab: runs on iCIMS. Neither platform has an adapter in fetchers/ yet — would need a
+  #     new fetcher module, out of scope for this pass (config-only expansion).
+  #   - fidelity, unitedhealth: no ATS platform signal found in static HTML (likely a heavier
+  #     JS SPA); did not chase further this pass.
+
   # Example Tier-1 companies to seed the config — add/remove freely.
   - name: "stripe"
     display_name: "Stripe"
@@ -190,6 +405,248 @@ companies:
     tier: 1
     adapter: "lever"
     board_token: "palantir"
+
+  # YC-backed / notable startups — verified live via public Greenhouse/Lever API at
+  # time of add (2026-08-10). Companies confirmed on Ashby (Notion, Ramp, Deel, Vanta,
+  # Retool, Rippling, DoorDash, Patreon, Segment, Substack) have no adapter yet — skipped.
+  - name: "brex"
+    display_name: "Brex"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "brex"
+
+  - name: "instacart"
+    display_name: "Instacart"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "instacart"
+
+  - name: "robinhood"
+    display_name: "Robinhood"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "robinhood"
+
+  - name: "affirm"
+    display_name: "Affirm"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "affirm"
+
+  - name: "gusto"
+    display_name: "Gusto"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "gusto"
+
+  - name: "reddit"
+    display_name: "Reddit"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "reddit"
+
+  - name: "discord"
+    display_name: "Discord"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "discord"
+
+  - name: "webflow"
+    display_name: "Webflow"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "webflow"
+
+  - name: "scaleai"
+    display_name: "Scale AI"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "scaleai"
+
+  - name: "flexport"
+    display_name: "Flexport"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "flexport"
+
+  - name: "faire"
+    display_name: "Faire"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "faire"
+
+  - name: "gitlab"
+    display_name: "GitLab"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "gitlab"
+
+  - name: "asana"
+    display_name: "Asana"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "asana"
+
+  - name: "airtable"
+    display_name: "Airtable"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "airtable"
+
+  - name: "mercury"
+    display_name: "Mercury"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "mercury"
+
+  - name: "plaid"
+    display_name: "Plaid"
+    tier: 1
+    adapter: "lever"
+    board_token: "plaid"
+
+  # Ashby-hosted YC-backed startups — verified live via public posting-api at
+  # add time (2026-08-10). retool, rippling, doordash, segment returned 404 on
+  # this API (different board slug or not on Ashby's public board) — skipped.
+  - name: "notion"
+    display_name: "Notion"
+    tier: 1
+    adapter: "ashby"
+    board_token: "notion"
+
+  - name: "ramp"
+    display_name: "Ramp"
+    tier: 1
+    adapter: "ashby"
+    board_token: "ramp"
+
+  - name: "deel"
+    display_name: "Deel"
+    tier: 1
+    adapter: "ashby"
+    board_token: "deel"
+
+  - name: "vanta"
+    display_name: "Vanta"
+    tier: 1
+    adapter: "ashby"
+    board_token: "vanta"
+
+  - name: "patreon"
+    display_name: "Patreon"
+    tier: 1
+    adapter: "ashby"
+    board_token: "patreon"
+
+  - name: "substack"
+    display_name: "Substack"
+    tier: 1
+    adapter: "ashby"
+    board_token: "substack"
+
+  # Added 2026-08-17: companies with real Data Scientist / Applied Scientist hiring
+  # (not just Data Engineer), to balance out the DE-heavy enterprise list above.
+  # Board tokens confirmed live via public API probe at add time (HTTP 200).
+  - name: "pinterest"
+    display_name: "Pinterest"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "pinterest"
+
+  - name: "linkedin"
+    display_name: "LinkedIn"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "linkedin"
+
+  - name: "airbnb"
+    display_name: "Airbnb"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "airbnb"
+
+  - name: "lyft"
+    display_name: "Lyft"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "lyft"
+
+  - name: "anthropic"
+    display_name: "Anthropic"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "anthropic"
+
+  - name: "block"
+    display_name: "Block (Square/Cash App)"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "block"
+
+  - name: "dropbox"
+    display_name: "Dropbox"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "dropbox"
+
+  - name: "figma"
+    display_name: "Figma"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "figma"
+
+  - name: "chime"
+    display_name: "Chime"
+    tier: 1
+    adapter: "greenhouse"
+    board_token: "chime"
+
+  - name: "rover"
+    display_name: "Rover"
+    tier: 1
+    adapter: "lever"
+    board_token: "rover"
+
+  - name: "openai"
+    display_name: "OpenAI"
+    tier: 1
+    adapter: "ashby"
+    board_token: "openai"
+
+  - name: "linear"
+    display_name: "Linear"
+    tier: 1
+    adapter: "ashby"
+    board_token: "linear"
+
+  - name: "vercel"
+    display_name: "Vercel"
+    tier: 1
+    adapter: "ashby"
+    board_token: "vercel"
+
+  - name: "imprint"
+    display_name: "Imprint"
+    tier: 1
+    adapter: "ashby"
+    board_token: "imprint"
+
+  - name: "mercor"
+    display_name: "Mercor"
+    tier: 1
+    adapter: "ashby"
+    board_token: "mercor"
+
+  - name: "cohere"
+    display_name: "Cohere"
+    tier: 1
+    adapter: "ashby"
+    board_token: "cohere"
+
+  # Investigated 2026-08-17, no reachable public API — 404 on greenhouse/lever, do
+  # not re-probe without a new reason: doordash, etsy, canva, wayfair, grammarly,
+  # netflix (lever; already covered separately via eightfold_sitemap), box, nextdoor,
+  # thumbtack, squareup, cashapp (folded into "block" above), perplexity-ai (ashby).
 
   - name: "speedyapply_newgrad_usa"
     display_name: "speedyapply 2027 AI New-Grad USA"

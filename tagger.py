@@ -153,8 +153,12 @@ _SENIOR_TITLE_RE = re.compile(
     r"\b(senior|sr\.?|staff|principal|lead|director|manager|head of|architect|vp)\b", re.I)
 
 _NEW_GRAD_RE = re.compile(
-    r"new grad|recent graduate|university graduate|entry[- ]level|early career|"
-    r"no (?:prior )?experience (?:is )?(?:required|necessary)|graduating|intern(?:ship)?\b",
+    # "university grad" and "new grad" are used interchangeably by the user (2026-08-14:
+    # "University grad or new grad, whatever terminal[ogy]") — both must be recognized,
+    # not just the "graduate" spelling.
+    r"new grad(?:uate)?|recent grad(?:uate)?|university grad(?:uate)?|entry[- ]level|"
+    r"early career|no (?:prior )?experience (?:is )?(?:required|necessary)|graduating|"
+    r"intern(?:ship)?\b",
     re.I,
 )
 
@@ -250,4 +254,19 @@ def experience_min_years(label: str):
     if not label or label == "not stated":
         return None
     m = re.match(r"\s*(\d{1,2})", label)
+    return int(m.group(1)) if m else None
+
+
+def experience_max_years(label: str):
+    """Upper bound of an `experience_required` label, or None if the posting stated no
+    upper bound ("5+ yrs", "not stated"). "3-8 yrs" -> 8, "0-2 yrs (new grad)" -> 2.
+
+    A stated upper bound matters for new-grad targeting separately from the lower bound:
+    "1-8 yrs" clears a min-years-of-3 filter (lo=1) but its band still reaches deep into
+    senior territory, so a filter that only checks the minimum will keep letting these
+    through even though the posting isn't really aimed at someone with 0-3 years.
+    """
+    if not label or label == "not stated":
+        return None
+    m = re.search(r"-(\d{1,2})\s*yrs", label)
     return int(m.group(1)) if m else None

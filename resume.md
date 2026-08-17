@@ -33,16 +33,6 @@
 
 -8pt
 
-Professional Summary
-
- 
- Data and AI professional (M.S. Data Science, 3.9 GPA) working end to end across healthcare, energy, e-commerce, and consumer data -- ingesting and transforming multi-source data, modeling it, and shipping the dashboards, ML models, and AI systems built on top of it.
- Strong in SQL and Python for ETL/ELT, data profiling, validation, and source-to-target mapping across relational (PostgreSQL), graph (Neo4j), and vector (ChromaDB) stores; equally at home in classical ML (XGBoost, SHAP) and LLM/agentic systems (LangGraph, Google ADK, RAG).
- Turns analysis into decisions -- stakeholder dashboards, rigorous evaluation (280-run ablation, calibrated confidence, zero hallucination) -- backed by a federally funded NSF selection, a 4th-place global hackathon finish, and teaching 120+ students.
- 
-
--12pt
-
 Education
 
  

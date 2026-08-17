@@ -35,9 +35,10 @@ def _link(label: str, url: str) -> str:
 
 
 def _print_job(job: dict) -> None:
+    note = " | [senior title, low/unstated exp]" if job.get("senior_title_flag") else ""
     head = (f"  {job['match_score']:>5} | posted {job.get('posted_date') or 'unknown'} | "
             f"exp {job.get('experience_required') or 'not stated'} | "
-            f"{job['company']} | {job.get('location') or ''}")
+            f"{job['company']} | {job.get('location') or ''}{note}")
     print(head)
     print("        " + _link(job['title'], job.get('apply_link', '')))
 
@@ -48,7 +49,12 @@ def cmd_run(args):
                            company_filter=args.company, include_seen=args.include_seen)
     print(f"\nSurfaced {result['surfaced']} jobs (US-only). "
           f"Score distribution: {result['score_distribution']}")
-    print(f"Outputs: {result['outputs']['csv']}")
+    print(f"Named-companies report ({result['outputs']['count']} jobs): {result['outputs']['csv']}")
+    print(f"Discovered-companies report ({result['outputs_discovered']['count']} jobs): "
+          f"{result['outputs_discovered']['csv']}")
+    if result.get("outreach", {}).get("count"):
+        print(f"Outreach drafts ({result['outreach']['count']} strong matches): "
+              f"{result['outreach']['path']}")
     if result.get("html_page"):
         print(f"Clickable page ({result['html_count']} jobs): open {result['html_page']}")
     print()
@@ -88,7 +94,12 @@ def cmd_fetch(args):
                           company_filter=args.company, include_seen=args.include_seen)
     print(f"\nSurfaced {result['surfaced']} jobs (US-only). "
           f"Score distribution: {result['score_distribution']}")
-    print(f"Outputs: {result['outputs']['csv']}")
+    print(f"Named-companies report ({result['outputs']['count']} jobs): {result['outputs']['csv']}")
+    print(f"Discovered-companies report ({result['outputs_discovered']['count']} jobs): "
+          f"{result['outputs_discovered']['csv']}")
+    if result.get("outreach", {}).get("count"):
+        print(f"Outreach drafts ({result['outreach']['count']} strong matches): "
+              f"{result['outreach']['path']}")
     if result.get("html_page"):
         print(f"Clickable page ({result['html_count']} jobs): open {result['html_page']}")
     print()
