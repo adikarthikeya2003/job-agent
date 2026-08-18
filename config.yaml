@@ -31,13 +31,27 @@ scoring:
   surface_threshold: 30
   # New-grad bias applied to match_score after the base TF-IDF score (before the 0-100
   # clamp). User is a fresh grad (2026-08-14): "give more preference to new grad roles"
-  # and "quality over quantity" — postings that clearly fit a 0-3 yr candidate should
-  # rank above wide-band/senior-leaning postings that merely clear the years filter.
+  # and "quality over quantity" — postings that clearly fit a 0-2 yr candidate should
+  # rank above wide-band postings that merely clear the years filter. (No separate
+  # "near-grad" bonus for min years == 3 — filters.max_experience_years: 3 now drops
+  # those entirely, tightened 2026-08-17 to strictly <3 years.)
   new_grad_bonus: 10          # experience_required min years <= 2
-  near_grad_bonus: 4          # min years == 3
   new_grad_label_bonus: 5     # "(new grad)" / "(multi-level)" explicitly in the label
   senior_title_penalty: 8     # title matches filters.exclude_title_terms
   wide_band_penalty: 6        # stated upper bound > max_experience_years
+  # September Sprint (2026-08-17): "one primary role, one backup" — data_scientist is
+  # locked primary (user: "data science is what I do"), ai_engineer is backup. Boost
+  # both above data_engineer/data_analyst/software_engineer, which the resume also
+  # matches well on keywords but which the user does NOT want leading the ranking.
+  primary_role_bonus: 12      # role_family == primary_role_family
+  backup_role_bonus: 6        # role_family == backup_role_family
+  primary_role_family: "data_scientist"
+  backup_role_family: "ai_engineer"
+  # "Apply within 24-48h of posting first" — bonus decays with age so same-day/next-day
+  # postings float to the top of an otherwise-tied score, without a hard cutoff that
+  # would drop a strong older match entirely.
+  fresh_posting_bonus_48h: 8   # posted_date within the last 48 hours
+  fresh_posting_bonus_7d: 3    # posted_date within the last 7 days (but not 48h)
   # Hard cap on how many postings get surfaced, applied AFTER scoring/bias/filtering,
   # keeping only the top N by adjusted score. User (2026-08-14): "don't show unnecessary
   # 100 roles ... quality over quantity". None = no cap (old behavior).
@@ -108,6 +122,7 @@ filters:
     - "manager"
     - "head of"
     - "vp"
+    - "vice president"
     - "principal"
   exclude_title_terms:
     - "architect"
@@ -118,11 +133,14 @@ filters:
 
   # Postings whose parsed minimum years-of-experience is >= this are dropped from
   # surfaced output. Postings with no stated experience ("not stated") are kept —
-  # there's no signal to exclude them on. This is an EXCLUSIVE lower bound: 4 means
-  # "keep <=3 years", which is exactly the 2026-08-14 request ("less than or equal to
-  # or min 3 years experience"). Do not "round" this down to 3 — that would exclude a
-  # posting requiring exactly 3 years, which the user explicitly wants kept.
-  max_experience_years: 4
+  # there's no signal to exclude them on, and the detail-enrichment pass (see
+  # pipeline.py::_enrich_experience + fetchers/detail.py) re-fetches the full JD for
+  # exactly these before this filter runs, so "not stated" reflects a genuinely
+  # checked JD, not a skipped one. This is an EXCLUSIVE lower bound: 3 means "keep
+  # strictly <3 years" — SUPERSEDES the earlier 2026-08-14 "keep <=3 years" request;
+  # corrected 2026-08-17 ("less than 3 years... strictly"). A posting requiring
+  # exactly 3 years is now excluded, not kept.
+  max_experience_years: 3
 
 sponsorship:
   # Phrases that flag a posting as explicitly excluding visa sponsorship — critical for OPT.
@@ -548,96 +566,112 @@ companies:
   # (not just Data Engineer), to balance out the DE-heavy enterprise list above.
   # Board tokens confirmed live via public API probe at add time (HTTP 200).
   - name: "pinterest"
+    source: "discovered"
     display_name: "Pinterest"
     tier: 1
     adapter: "greenhouse"
     board_token: "pinterest"
 
   - name: "linkedin"
+    source: "discovered"
     display_name: "LinkedIn"
     tier: 1
     adapter: "greenhouse"
     board_token: "linkedin"
 
   - name: "airbnb"
+    source: "discovered"
     display_name: "Airbnb"
     tier: 1
     adapter: "greenhouse"
     board_token: "airbnb"
 
   - name: "lyft"
+    source: "discovered"
     display_name: "Lyft"
     tier: 1
     adapter: "greenhouse"
     board_token: "lyft"
 
   - name: "anthropic"
+    source: "discovered"
     display_name: "Anthropic"
     tier: 1
     adapter: "greenhouse"
     board_token: "anthropic"
 
   - name: "block"
+    source: "discovered"
     display_name: "Block (Square/Cash App)"
     tier: 1
     adapter: "greenhouse"
     board_token: "block"
 
   - name: "dropbox"
+    source: "discovered"
     display_name: "Dropbox"
     tier: 1
     adapter: "greenhouse"
     board_token: "dropbox"
 
   - name: "figma"
+    source: "discovered"
     display_name: "Figma"
     tier: 1
     adapter: "greenhouse"
     board_token: "figma"
 
   - name: "chime"
+    source: "discovered"
     display_name: "Chime"
     tier: 1
     adapter: "greenhouse"
     board_token: "chime"
 
   - name: "rover"
+    source: "discovered"
     display_name: "Rover"
     tier: 1
     adapter: "lever"
     board_token: "rover"
 
   - name: "openai"
+    source: "discovered"
     display_name: "OpenAI"
     tier: 1
     adapter: "ashby"
     board_token: "openai"
 
   - name: "linear"
+    source: "discovered"
     display_name: "Linear"
     tier: 1
     adapter: "ashby"
     board_token: "linear"
 
   - name: "vercel"
+    source: "discovered"
     display_name: "Vercel"
     tier: 1
     adapter: "ashby"
     board_token: "vercel"
 
   - name: "imprint"
+    source: "discovered"
     display_name: "Imprint"
     tier: 1
     adapter: "ashby"
     board_token: "imprint"
 
   - name: "mercor"
+    source: "discovered"
     display_name: "Mercor"
     tier: 1
     adapter: "ashby"
     board_token: "mercor"
 
   - name: "cohere"
+    source: "discovered"
     display_name: "Cohere"
     tier: 1
     adapter: "ashby"

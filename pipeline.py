@@ -155,20 +155,33 @@ def run(config_path: Path = BASE_DIR / "config.yaml", daily_mode: bool = True,
                 return False
         return True
 
+    def _posting_age_days(job: dict) -> float | None:
+        raw = job.get("posted_date")
+        if not raw:
+            return None
+        try:
+            posted = datetime.strptime(raw[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+        return (datetime.now() - posted).total_seconds() / 86400.0
+
     def _apply_new_grad_bias(job: dict, base_score: float) -> float:
-        """Re-rank (not re-filter) surfaced postings toward genuine new-grad fits.
+        """Re-rank (not re-filter) surfaced postings toward genuine new-grad fits,
+        the locked primary/backup role, and freshness.
         Added 2026-08-14: "give more preference to new grad roles as I'm a new grad" and
         "quality over quantity" — a posting that clears the years filter on a technicality
-        (e.g. "1-8 yrs", low end only) shouldn't outrank one that's squarely 0-2 yrs."""
+        (e.g. "1-8 yrs", low end only) shouldn't outrank one that's squarely 0-2 yrs.
+        Added 2026-08-17 (September Sprint): role-family and posting-age bonuses — see
+        config.yaml scoring.primary_role_family / fresh_posting_bonus_* for rationale."""
         label = job.get("experience_required")
         lo = experience_min_years(label)
         hi = experience_max_years(label)
         score = base_score
-        if lo is not None:
-            if lo <= 2:
-                score += scoring_cfg.get("new_grad_bonus", 0)
-            elif lo == 3:
-                score += scoring_cfg.get("near_grad_bonus", 0)
+        # lo==3 no longer gets a separate branch here: max_experience_years=3 (strictly
+        # <3 years, tightened 2026-08-17) already drops any posting with lo>=3 before
+        # this runs, so a "near-grad" 3yr posting never reaches scoring at all.
+        if lo is not None and lo <= 2:
+            score += scoring_cfg.get("new_grad_bonus", 0)
         if label and "grad" in label.lower():
             score += scoring_cfg.get("new_grad_label_bonus", 0)
         if job.get("senior_title_flag"):
@@ -176,6 +189,20 @@ def run(config_path: Path = BASE_DIR / "config.yaml", daily_mode: bool = True,
         if (max_experience_years is not None and hi is not None
                 and hi > max_experience_years):
             score -= scoring_cfg.get("wide_band_penalty", 0)
+
+        role_family = job.get("role_family")
+        if role_family and role_family == scoring_cfg.get("primary_role_family"):
+            score += scoring_cfg.get("primary_role_bonus", 0)
+        elif role_family and role_family == scoring_cfg.get("backup_role_family"):
+            score += scoring_cfg.get("backup_role_bonus", 0)
+
+        age_days = _posting_age_days(job)
+        if age_days is not None:
+            if age_days <= 2:
+                score += scoring_cfg.get("fresh_posting_bonus_48h", 0)
+            elif age_days <= 7:
+                score += scoring_cfg.get("fresh_posting_bonus_7d", 0)
+
         return round(max(0.0, min(score, 100.0)), 1)
 
     store = DedupStore(BASE_DIR / "data" / "jobs.db")
@@ -269,8 +296,22 @@ def run(config_path: Path = BASE_DIR / "config.yaml", daily_mode: bool = True,
     # Quality over quantity (2026-08-14): keep only the top N by (bias-adjusted) score
     # rather than dumping everything that cleared surface_threshold.
     all_jobs.sort(key=lambda j: j["match_score"], reverse=True)
-    if max_surfaced_jobs is not None:
-        all_jobs = all_jobs[:max_surfaced_jobs]
+
+    # A single employer can have a real, non-duplicate req open at a dozen offices under
+    # the identical title (e.g. Capital One's 21 separately-numbered "Lead Data Engineer"
+    # postings) — each one is a genuine opening, not a dedup bug, but letting all of them
+    # fill a 25-slot "quality over quantity" report crowds out every other company.
+    # Added 2026-08-17 after that exact case squeezed newly-added DS-focused companies
+    # (Anthropic, Linear) entirely out of the discovered report despite scoring 50-60.
+    MAX_PER_TITLE = 2
+    seen_title_counts: dict[tuple[str, str], int] = {}
+    diverse_jobs = []
+    for j in all_jobs:
+        key = (j.get("company", ""), j.get("title", ""))
+        seen_title_counts[key] = seen_title_counts.get(key, 0) + 1
+        if seen_title_counts[key] <= MAX_PER_TITLE:
+            diverse_jobs.append(j)
+    all_jobs = diverse_jobs
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -279,16 +320,35 @@ def run(config_path: Path = BASE_DIR / "config.yaml", daily_mode: bool = True,
     # (crawl4ai/Firecrawl-found employers). Both are the same quality-filtered surfaced
     # set, just partitioned by config.yaml's per-company `source` tag ("user" is the
     # default for any entry that doesn't set one, i.e. every company added before this
-    # partition existed).
+    # partition existed). The top-N cap is applied to EACH split independently — capping
+    # the combined pool first (as this used to do) let high-volume named-company boards
+    # (Microsoft, IBM, etc.) crowd out every discovered-company match before the split
+    # ever happened, e.g. Anthropic/Linear postings scoring 50-60 got dropped entirely
+    # while the named side kept multiple near-duplicate IBM postings.
     source_by_name = {c["name"]: c.get("source", "user") for c in cfg["companies"]}
     user_jobs = [j for j in all_jobs if source_by_name.get(j["_cfg_name"], "user") == "user"]
     discovered_jobs = [j for j in all_jobs if source_by_name.get(j["_cfg_name"], "user") == "discovered"]
+    if max_surfaced_jobs is not None:
+        user_jobs = user_jobs[:max_surfaced_jobs]
+        discovered_jobs = discovered_jobs[:max_surfaced_jobs]
+    all_jobs = user_jobs + discovered_jobs
     written = output_mod.write_outputs(user_jobs, BASE_DIR / "output", stamp, suffix="_named_companies")
     written_discovered = output_mod.write_outputs(
         discovered_jobs, BASE_DIR / "output", stamp, suffix="_discovered_companies")
     logger.info(f"Named-companies report: {written['count']} jobs -> {written['csv']}")
     logger.info(f"Discovered-companies report: {written_discovered['count']} jobs -> "
                 f"{written_discovered['csv']}")
+
+    # Same two-report split as CSV/JSON/MD, as a clickable sortable page (2026-08-17,
+    # "produce these as well in html just like you did for the previous one").
+    html_named = output_mod.write_html(user_jobs, BASE_DIR / "output", stamp,
+                                        stable_name="job_matches_named_companies.html",
+                                        page_title="Job Matches — Named Companies")
+    html_discovered = output_mod.write_html(discovered_jobs, BASE_DIR / "output", stamp,
+                                             stable_name="job_matches_discovered_companies.html",
+                                             page_title="Job Matches — Discovered Companies")
+    logger.info(f"Named-companies HTML: {html_named['html']}")
+    logger.info(f"Discovered-companies HTML: {html_discovered['html']}")
 
     outreach_result = outreach.generate_drafts(all_jobs, BASE_DIR / "output", stamp)
     logger.info(f"Outreach drafts: {outreach_result['count']} -> {outreach_result['path']}")
@@ -316,6 +376,7 @@ def run(config_path: Path = BASE_DIR / "config.yaml", daily_mode: bool = True,
     top_jobs = sorted(all_jobs, key=lambda j: j["match_score"], reverse=True)[:15]
     return {"surfaced": written["count"] + written_discovered["count"],
             "outputs": written, "outputs_discovered": written_discovered,
+            "html_named": html_named, "html_discovered": html_discovered,
             "score_distribution": dist_summary,
             "top_jobs": top_jobs, "html_page": html_written["html"],
             "html_count": html_written["count"],
