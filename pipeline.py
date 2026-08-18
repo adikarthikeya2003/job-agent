@@ -15,7 +15,7 @@ from dedup_store import DedupStore, resume_hash
 from fetchers import (greenhouse, lever, rss, workday, google_careers, html_scraper,
                        jobright_stub, oracle_hcm, github_md, amazon_jobs,
                        microsoft_careers, ibm_careers, browser_inbox, detail,
-                       eightfold_sitemap, ashby)
+                       eightfold_sitemap, ashby, yc_workatastartup)
 from match_scorer import MatchScorer
 from resume_parser import parse_resume_sections, sync_resume_md, full_resume_text
 from tagger import (tag_job, tag_experience_required, experience_min_years,
@@ -41,6 +41,7 @@ ADAPTERS = {
     "browser_inbox": browser_inbox.fetch,   # Tier 5, reads a Chrome-harvested drop file
     "eightfold_sitemap": eightfold_sitemap.fetch,
     "ashby": ashby.fetch,
+    "yc_workatastartup": yc_workatastartup.fetch,
     # "browser_manual" deliberately excluded — Tier 5, manual CLI path only (cli.py fetch-manual)
 }
 
@@ -166,13 +167,13 @@ def run(config_path: Path = BASE_DIR / "config.yaml", daily_mode: bool = True,
         return (datetime.now() - posted).total_seconds() / 86400.0
 
     def _apply_new_grad_bias(job: dict, base_score: float) -> float:
-        """Re-rank (not re-filter) surfaced postings toward genuine new-grad fits,
-        the locked primary/backup role, and freshness.
+        """Re-rank (not re-filter) surfaced postings toward genuine new-grad fits
+        and freshness. No role-family bonus: data_scientist, data_analyst,
+        data_engineer, and ai_engineer/ml_engineer all compete purely on resume-fit
+        score — see config.yaml scoring section for the 2026-08-18 correction.
         Added 2026-08-14: "give more preference to new grad roles as I'm a new grad" and
         "quality over quantity" — a posting that clears the years filter on a technicality
-        (e.g. "1-8 yrs", low end only) shouldn't outrank one that's squarely 0-2 yrs.
-        Added 2026-08-17 (September Sprint): role-family and posting-age bonuses — see
-        config.yaml scoring.primary_role_family / fresh_posting_bonus_* for rationale."""
+        (e.g. "1-8 yrs", low end only) shouldn't outrank one that's squarely 0-2 yrs."""
         label = job.get("experience_required")
         lo = experience_min_years(label)
         hi = experience_max_years(label)
@@ -189,12 +190,6 @@ def run(config_path: Path = BASE_DIR / "config.yaml", daily_mode: bool = True,
         if (max_experience_years is not None and hi is not None
                 and hi > max_experience_years):
             score -= scoring_cfg.get("wide_band_penalty", 0)
-
-        role_family = job.get("role_family")
-        if role_family and role_family == scoring_cfg.get("primary_role_family"):
-            score += scoring_cfg.get("primary_role_bonus", 0)
-        elif role_family and role_family == scoring_cfg.get("backup_role_family"):
-            score += scoring_cfg.get("backup_role_bonus", 0)
 
         age_days = _posting_age_days(job)
         if age_days is not None:

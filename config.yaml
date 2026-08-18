@@ -39,14 +39,14 @@ scoring:
   new_grad_label_bonus: 5     # "(new grad)" / "(multi-level)" explicitly in the label
   senior_title_penalty: 8     # title matches filters.exclude_title_terms
   wide_band_penalty: 6        # stated upper bound > max_experience_years
-  # September Sprint (2026-08-17): "one primary role, one backup" — data_scientist is
-  # locked primary (user: "data science is what I do"), ai_engineer is backup. Boost
-  # both above data_engineer/data_analyst/software_engineer, which the resume also
-  # matches well on keywords but which the user does NOT want leading the ranking.
-  primary_role_bonus: 12      # role_family == primary_role_family
-  backup_role_bonus: 6        # role_family == backup_role_family
-  primary_role_family: "data_scientist"
-  backup_role_family: "ai_engineer"
+  # Correction 2026-08-18: an earlier pass locked data_scientist as a boosted
+  # "primary" role over data_engineer/data_analyst. User overrode that: "its not
+  # just data scientist, its data scientist, data analyst, data engineer, ai/ml
+  # engineer, whichever are suitable for me by my resume." No role family gets a
+  # ranking edge over another — data_scientist, data_analyst, data_engineer, and
+  # ai_engineer/ml_engineer all compete purely on resume-fit score. Do not
+  # reintroduce a role-family bonus without a new explicit instruction.
+  #
   # "Apply within 24-48h of posting first" — bonus decays with age so same-day/next-day
   # postings float to the top of an otherwise-tied score, without a hard cutoff that
   # would drop a strong older match entirely.
@@ -691,6 +691,13 @@ companies:
       url: "https://github.com/speedyapply/2027-AI-College-Jobs/blob/main/NEW_GRAD_USA.md"
       branch: "main"
     notes: "Community-maintained new-grad AI/ML/DS/SWE list (USA). Updates continuously; no per-posting JD, so match scores are title+location based."
+
+  - name: "yc_workatastartup"
+    display_name: "Y Combinator (Work at a Startup)"
+    tier: 3
+    adapter: "yc_workatastartup"
+    source: "discovered"
+    notes: "workatastartup.com robots.txt is fully open and listing cards (title/company/location/comp/apply-link) are publicly visible without a YC account. No JSON API — uses crawl4ai to render /jobs/l/software-engineer and /jobs/l/science (the two role categories covering this user's target roles) and regex-parses the markdown. Single-page render per category (~25-30 cards each), not the full multi-thousand-posting board — pagination is scroll-triggered client fetches a one-shot render doesn't capture. No per-posting JD (login-gated), so experience_required is title-based only. Added 2026-08-18 after verifying Indeed and ZipRecruiter are both robots.txt-blocked (Indeed disallows /jobs even for named crawlers; ZipRecruiter's default rule is Disallow: / entirely) — not scraped, same policy as Meta/Google."
 
 daily_run:
   # Tiers 4 and 5 are never included here regardless of this list — enforced in pipeline.py.
